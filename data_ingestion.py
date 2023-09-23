@@ -8,7 +8,7 @@ import pandas as pd
 
 
 def one_m_hist_load(symbol):
-    start_date = datetime.now() - timedelta(days=30)
+    start_date = datetime.now() - timedelta(days=2)
     end_date = start_date + timedelta(days=7)
     c = 0
     while end_date <= datetime.now() + timedelta(days=10):
