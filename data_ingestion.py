@@ -8,7 +8,7 @@ import pandas as pd
 
 
 def one_m_hist_load(symbol):
-    start_date = datetime.now() - timedelta(days=2)
+    start_date = datetime.now() - timedelta(days=29)
     end_date = start_date + timedelta(days=7)
     c = 0
     while end_date <= datetime.now() + timedelta(days=10):
@@ -36,25 +36,36 @@ def historical_data(start_date,end_date,symbol,c):
     
 
 def inc_load(symbl):
+    c = 1
     while True:
-        now = datetime.now()
-        price = stock_info.get_live_price("AAPL")
-        print(now, f'{symbl}:', price)
-        data = {
-                'Datetime':now,
-                'Symbl': f'{symbl}',
-                'Price': price
-                }
-        df = pd.json_normalize(data)
-        df.to_csv(f'{symbl}_stock_data.csv',sep=',',mode='a', index=False, header=None)
-        time.sleep(1)
+        
+        try:
+            now = datetime.now()
+            price = stock_info.get_live_price(symbl)
+            print(now, f'{symbl}:', price)
+            data = {
+                    'Datetime':now,
+                    'Symbl': f'{symbl}',
+                    'Price': price
+                    }
+            df = pd.json_normalize(data)
+            if c == 0:
+                df.to_csv(f'{symbl}_stock_data.csv',sep=',',mode='a', index=False)
+            else:
+                df.to_csv(f'{symbl}_stock_data.csv',sep=',',mode='a', index=False, header=None)
+            time.sleep(1)
+            c+=1
+        except:
+            time.sleep(10)
+            continue
     
     #print(real_time_quotes)
 
 
 def main():
-    symbol = 'TCS.NS'
-    one_m_hist_load(symbol)
+    symbol = '^NSEI'
+    #one_m_hist_load(symbol)
+    inc_load(symbol)
 
 if __name__ == '__main__':
     main()
