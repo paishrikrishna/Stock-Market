@@ -5,7 +5,33 @@ from datetime import datetime,timedelta
 import requests
 import json
 import numpy as np
+import alpaca_trade_api as tradeapi
 
+
+class trading_logs():
+
+    def __init__(self,symbl):
+        self.ip = 0
+        self.cp = 0
+        self.act = ''
+        self.qty = 0
+        self.tp = 0
+        self.pl = 0
+        self.symbl = symbl
+
+    def call_addition(self):
+        self.j_data = {
+                        'Symbl': self.symbl,
+                        'Act': self.act,
+                        'Qty': self.qty,
+                        'IP': self.ip,
+                        'CP': self.cp,
+                        'TP': self.tp,
+                        'P&L': self.pl,
+                        'Datetime': datetime.now()
+                    }
+        pd.json_normalize(self.j_data).to_csv('trade_legisure.csv',sep=',',mode='a',header=None,index=False)
+        #print(f"BUY Order Placed {self.j_data}")
 
 
 
@@ -14,6 +40,8 @@ class trading_meths(multiprocessing.Process):
     def __init__(self, id,current_time,Task,SL,TP,Trade_Price,Trade_Type,Symbl):
         super(trading_meths, self).__init__()
         self.time_interval = id
+        self.SOA = []
+        self.BOA = []
         self.current_time = current_time
         self.Task = Task
         self.SL = SL
@@ -24,6 +52,15 @@ class trading_meths(multiprocessing.Process):
         self.decision_map = {'BULL':0,'BEAR':0,'SIDE':0}
         self.trend_a = ''
         self.trend_p = ''
+        self.action = ''
+        # API Info for fetching data, portfolio, etc. from Alpaca
+        self.BASE_URL = "https://paper-api.alpaca.markets"
+        self.ALPACA_API_KEY = "PK9XBIHFTQFXFL1KOFOR"
+        self.ALPACA_SECRET_KEY = "IGBZWYSFBf1q8nVdM0OXyi7WFdljdhwFY5UEB7pf"
+
+        # Instantiate REST API Connection
+        self.api = tradeapi.REST(key_id=self.ALPACA_API_KEY, secret_key=self.ALPACA_SECRET_KEY, 
+                            base_url=self.BASE_URL, api_version='v2')
                  
     def run(self):
         #print(f'Calculating for {self.time_interval} min time interval')
@@ -46,18 +83,75 @@ class trading_meths(multiprocessing.Process):
                     self.trend_p = self.trend_a
                     self.send_slack_alert(self.msg_val)
 
-                print(self.decision_map)
-                print(self.trend_a)
-                print("\n")
-            
+                #print(self.decision_map)
+                #print(self.trend_a)
+                #print("\n")
+
+            if self.trend_a == 'BULL' and self.action != 'buy' and c%4 == 0:
+                self.action = 'buy'
+                self.place_trade_order(1,self.action)
+
+            elif self.trend_a == 'BEAR' and self.action != 'sell' and c%4 != 0:
+                self.action = 'sell'
+                self.place_trade_order(1,self.action)
+                
             time.sleep(1)
-                
-                
             
+                
+                
+    def buy_call(self):
+        obj = trading_logs(self.Symbl)
+        lc = self.latest_closing_data()
+        
+        print(len(self.SOA))
+        if len(self.SOA) == 0:
+            obj.ip =  lc
+            self.BOA.append(obj)
+        else:
+            obj.ip = self.SOA.pop().ip
+            print(obj.ip)
+        
+        obj.cp = lc
+        obj.act = 'B'
+        obj.qty = 1
+        obj.tp = obj.qty*obj.cp
+        obj.pl = (obj.ip - obj.cp)
+
+
+        obj.call_addition()
+
+
+    def sell_call(self):
+        obj = trading_logs(self.Symbl)
+        lc = self.latest_closing_data()
+        print(len(self.BOA))
+
+        if len(self.BOA) == 0:
+            obj.ip =  lc
+            self.SOA.append(obj)
+        else:
+            
+            obj.ip = self.BOA.pop().ip
+            print(obj.ip)
+        
+        obj.cp = lc
+        obj.act = 'S'
+        obj.qty = -1
+        obj.tp = lc
+        obj.pl = (obj.ip - obj.cp)
+
+
+        obj.call_addition()
+
+
+        
+            
+
+
 
     def bar_cal(self,time_interval,current_time,bars):
 
-        print(f'Calculating for {time_interval} interval')
+        #print(f'Calculating for {time_interval} interval')
         st = datetime.now() - timedelta(days=7)
         #st = st.strftime('%Y-%m-%d') + ' 09:15:00'
 
@@ -139,11 +233,12 @@ class trading_meths(multiprocessing.Process):
 
 
     def send_slack_alert(self,msg):
-        self.url = 'https://hooks.slack.com/services/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'
+        self.url = 'https://hooks.slack.com/services/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'
 
         self.headers = {'Content-type': 'application/json'}
 
         self.data = {"text":msg}
+        #print(msg)
 
         self.response = requests.post(self.url, headers=self.headers, data=json.dumps(self.data))
 
@@ -172,12 +267,24 @@ class trading_meths(multiprocessing.Process):
         #print(f'{self.CP}')
 
 
+    def place_trade_order(self,qty,type):
+        for i in range(qty):
+            if type == 'buy':
+                self.buy_call()
+            else:
+                self.sell_call()
+
+
+        
+
+
+
 
 
 if __name__ == '__main__':
     curr = datetime.today()
     curr = curr.strftime('%Y-%m-%d')
-    p1 = trading_meths(3,curr,'TREND',1553.40,1523.40,1533.15,'SELL','^NSEI')
+    p1 = trading_meths(3,curr,'TREND',1553.40,1523.40,1533.15,'SELL','AAPL')
     p1.start()
     
     

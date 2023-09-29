@@ -10,13 +10,17 @@ import pandas as pd
 def one_m_hist_load(symbol):
     start_date = datetime.now() - timedelta(days=29)
     end_date = start_date + timedelta(days=7)
-    c = 0
+    c = 1
     while end_date <= datetime.now() + timedelta(days=10):
         c+=1
         print(f'Fetching Data from {start_date} - {end_date}')
         historical_data(start_date,end_date,symbol,c)
         start_date = end_date
         end_date = start_date + timedelta(days=7)
+
+    df = pd.read_csv(f"{symbol.replace('.','_')}.csv")
+    df = df.drop_duplicates()
+    df.to_csv(f"{symbol.replace('.','_')}_1m_data.csv",sep = ',',index=False,mode='w')
 
 
 def hist_load():
@@ -63,7 +67,7 @@ def inc_load(symbl):
 
 
 def main():
-    symbol = '^NSEI'
+    symbol = 'AAPL'
     #one_m_hist_load(symbol)
     inc_load(symbol)
 
