@@ -6,6 +6,15 @@ import requests
 import json
 import numpy as np
 import alpaca_trade_api as tradeapi
+import firebase_admin
+from firebase_admin import credentials
+from firebase_admin import db
+
+cred = credentials.Certificate("documents-2d6d5-firebase-adminsdk-m0cc3-c4d1f5a972.json")
+firebase_admin.initialize_app(cred,{'databaseURL': 'https://documents-2d6d5-default-rtdb.asia-southeast1.firebasedatabase.app'})
+
+ref = db.reference('Stock')
+
 
 
 class trading_logs():
@@ -33,11 +42,25 @@ class trading_logs():
         pd.json_normalize(self.j_data).to_csv('trade_legisure.csv',sep=',',mode='a',header=None,index=False)
         #print(f"BUY Order Placed {self.j_data}")
 
+    def bkp_open_positions(self):
+        self.j_data = {
+                        'Symbl': self.symbl,
+                        'Act': self.act,
+                        'Qty': self.qty,
+                        'IP': self.ip,
+                        'CP': self.cp,
+                        'TP': self.tp,
+                        'P&L': self.pl,
+                        'Datetime': datetime.now()
+                    }
+        pd.json_normalize(self.j_data).to_csv('open_positions_legisure.csv',sep=',',mode='a',header=None,index=False)
+
+
 
 
 
 class trading_meths(multiprocessing.Process):
-    def __init__(self, id,current_time,Task,SL,TP,Trade_Price,Trade_Type,Symbl):
+    def __init__(self, id,current_time,Task,SL,TP,Trade_Price,Trade_Type,Symbl,Balance):
         super(trading_meths, self).__init__()
         self.time_interval = id
         self.SOA = []
@@ -53,18 +76,19 @@ class trading_meths(multiprocessing.Process):
         self.trend_a = ''
         self.trend_p = ''
         self.action = ''
-        # API Info for fetching data, portfolio, etc. from Alpaca
-        self.BASE_URL = "https://paper-api.alpaca.markets"
-        self.ALPACA_API_KEY = "PK9XBIHFTQFXFL1KOFOR"
-        self.ALPACA_SECRET_KEY = "IGBZWYSFBf1q8nVdM0OXyi7WFdljdhwFY5UEB7pf"
-
-        # Instantiate REST API Connection
-        self.api = tradeapi.REST(key_id=self.ALPACA_API_KEY, secret_key=self.ALPACA_SECRET_KEY, 
-                            base_url=self.BASE_URL, api_version='v2')
-                 
+        self.rpal = 0
+        self.avg_p = 0
+        self.qty = 0
+        self.cp = 0
+        self.balance = Balance
+        self.total_pl = 0
+        
     def run(self):
         #print(f'Calculating for {self.time_interval} min time interval')
+        c = 0
+        self.start_of_trade_acts()
         while True:
+            c+= 1
             self.decision_map = {'BULL':0,'BEAR':0,'SIDE':0}
             if self.Task == 'ALERT':
                 self.price_reach_alert()
@@ -87,60 +111,123 @@ class trading_meths(multiprocessing.Process):
                 #print(self.trend_a)
                 #print("\n")
 
-            if self.trend_a == 'BULL' and self.action != 'buy' and c%4 == 0:
+            if 1 <= c <= 4:
+                self.place_trade_order(1,'buy')
+            elif 5<= c <= 8:
+                self.place_trade_order(1,'sell')
+            else:
+                self.place_trade_order(2,'buy')
+            
+            self.running_profit()
+            
+            if c > 8:
+                self.end_of_trade_acts()
+                break
+            
+            print(f'Symbl: {self.Symbl} \n Qty: {self.qty} \n Avg Order Filled Price: {self.avg_p} \n P&L {self.rpal}')
+            
+            time.sleep(1)
+            continue
+
+            if self.trend_a == 'BULL' and self.action != 'buy':
                 self.action = 'buy'
                 self.place_trade_order(1,self.action)
 
-            elif self.trend_a == 'BEAR' and self.action != 'sell' and c%4 != 0:
+            elif self.trend_a == 'BEAR' and self.action != 'sell':
                 self.action = 'sell'
                 self.place_trade_order(1,self.action)
+
+
+            self.running_profit()
                 
             time.sleep(1)
-            
-                
-                
+             
+    def running_profit(self):
+        act = ''
+        if len(self.BOA) > 0:
+            self.cp = self.latest_closing_data()
+            avg_p = 0
+            self.qty = len(self.BOA)
+            for i in self.BOA:
+                avg_p += i.ip
+            self.avg_p = avg_p / self.qty
+            self.rpal = (self.cp - self.avg_p) * self.qty
+            act = 'Long'
+
+        elif len(self.SOA) > 0:
+            self.cp = self.latest_closing_data()
+            avg_p = 0
+            self.qty = len(self.SOA)
+            for i in self.SOA:
+                avg_p += i.ip
+            self.avg_p = avg_p / self.qty
+            self.rpal = (self.avg_p - self.cp) * self.qty
+            act = 'Short'
+        
+        if len(self.SOA) + len(self.BOA) == 0:
+            self.qty = 0 
+            self.avg_p = 0
+            self.rpal = 0
+            self.cp = 0
+            ref.child(f'Running_P&L/{self.Symbl}').delete()
+
+        else:
+            users_ref = ref.child('Running_P&L')
+            users_ref.update({
+                self.Symbl: {
+                                'Symbol':self.Symbl,
+                                'Qty': self.qty,
+                                'Avg Price': self.avg_p,
+                                'P&L': self.rpal,
+                                'Position': act
+                            }
+                })
+        users_ref = ref.child('Trade')
+        users_ref.update({
+                            self.Symbl:{
+                                'Balance': self.balance,
+                                'Total P&L': self.total_pl
+                            }
+                        })
+
     def buy_call(self):
         obj = trading_logs(self.Symbl)
         lc = self.latest_closing_data()
         
-        print(len(self.SOA))
         if len(self.SOA) == 0:
             obj.ip =  lc
             self.BOA.append(obj)
         else:
             obj.ip = self.SOA.pop().ip
-            print(obj.ip)
-        
+               
         obj.cp = lc
         obj.act = 'B'
         obj.qty = 1
         obj.tp = obj.qty*obj.cp
         obj.pl = (obj.ip - obj.cp)
-
-
+        self.balance -= lc
+        self.total_pl += obj.pl
         obj.call_addition()
 
 
     def sell_call(self):
         obj = trading_logs(self.Symbl)
         lc = self.latest_closing_data()
-        print(len(self.BOA))
-
+        
         if len(self.BOA) == 0:
             obj.ip =  lc
             self.SOA.append(obj)
         else:
             
             obj.ip = self.BOA.pop().ip
-            print(obj.ip)
-        
+           
         obj.cp = lc
         obj.act = 'S'
         obj.qty = -1
         obj.tp = lc
         obj.pl = (obj.ip - obj.cp)
-
-
+        self.balance += lc
+        self.total_pl += obj.pl
         obj.call_addition()
 
 
@@ -174,7 +261,7 @@ class trading_meths(multiprocessing.Process):
         self.df['minute'] = pd.to_datetime(self.df['Datetime'],format= '%Y-%m-%d %H:%M:%S').dt.minute
         self.df['3m'] = self.df['minute']//time_interval
         self.df['grp_3m'] = self.df['updt'].dt.strftime('%Y%m%d%H')+self.df['3m'].astype(str)
-        
+
         self.df = self.df.sort_values(by=['updt'], ascending=True)
 
         self.temp_df = self.df.groupby('grp_3m').apply(lambda x: x.iloc[[-1]]).reset_index(drop=True).sort_values(by=['updt'], ascending=True)
@@ -274,6 +361,40 @@ class trading_meths(multiprocessing.Process):
             else:
                 self.sell_call()
 
+    def end_of_trade_acts(self):
+        for i in self.SOA:
+            i.bkp_open_positions()
+        
+        for i in self.BOA:
+            i.bkp_open_positions()
+
+    def start_of_trade_acts(self):
+        df = pd.read_csv('open_positions_legisure.csv')
+        df = df[df['Symbl'] == self.Symbl]
+        
+        for index,row in df.iterrows():
+            obj = trading_logs(self.Symbl)
+            obj.symbl = row['Symbl']
+            obj.act = row['Act']
+            obj.qty = row['Qty']
+            obj.ip = row['IP']
+            obj.cp = row['CP']
+            obj.tp = row['TP']
+            obj.pl = row['P&L']
+
+            if row['Act'] == 'B':
+                self.BOA.append(obj)
+            else:
+                self.SOA.append(obj)
+
+        print(f'{self.Symbl} - Buy = {len(self.BOA)} - Sell = {len(self.SOA)}')
+        pd.DataFrame(columns = ['Symbl','Act','Qty','IP','CP','TP','P&L','Datetime']).to_csv('open_positions_legisure.csv',sep=',',header=True,index=False)
+        
+
+
+
+
+
 
         
 
@@ -282,10 +403,12 @@ class trading_meths(multiprocessing.Process):
 
 
 if __name__ == '__main__':
-    curr = datetime.today()
+    curr = datetime.today() - timedelta(days=7)
     curr = curr.strftime('%Y-%m-%d')
-    p1 = trading_meths(3,curr,'TREND',1553.40,1523.40,1533.15,'SELL','AAPL')
+    p1 = trading_meths(3,curr,'TREND',1553.40,1523.40,1533.15,'SELL','AAPL',100000)
     p1.start()
+    p2 = trading_meths(3,curr,'TREND',1553.40,1523.40,1533.15,'SELL','^NSEI',100000)
+    p2.start()
     
     
 # 19675 Nifty short
