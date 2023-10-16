@@ -84,17 +84,14 @@ class trading_meths(multiprocessing.Process):
         self.total_pl = 0
         
     def run(self):
-        #print(f'Calculating for {self.time_interval} min time interval')
-        c = 0
         self.start_of_trade_acts()
         while True:
-            c+= 1
             self.decision_map = {'BULL':0,'BEAR':0,'SIDE':0}
             if self.Task == 'ALERT':
                 self.price_reach_alert()
             else:
                 for i in [3,5,10,15]:
-                    self.decision_map[self.bar_cal(i,self.current_time,4)] += 1
+                    self.decision_map[self.bar_cal(i,self.current_time,30//i)] += 1
                 if self.decision_map['BULL'] > self.decision_map['BEAR'] and self.decision_map['BULL'] > self.decision_map['SIDE']:
                     self.trend_a = 'BULL'
                 elif self.decision_map['BEAR'] > self.decision_map['BULL'] and self.decision_map['BEAR'] > self.decision_map['SIDE']:
@@ -107,40 +104,22 @@ class trading_meths(multiprocessing.Process):
                     self.trend_p = self.trend_a
                     self.send_slack_alert(self.msg_val)
 
-                #print(self.decision_map)
-                #print(self.trend_a)
-                #print("\n")
-
-            if 1 <= c <= 4:
-                self.place_trade_order(1,'buy')
-            elif 5<= c <= 8:
-                self.place_trade_order(1,'sell')
-            else:
-                self.place_trade_order(2,'buy')
-            
-            self.running_profit()
-            
-            if c > 8:
-                self.end_of_trade_acts()
-                break
-            
-            print(f'Symbl: {self.Symbl} \n Qty: {self.qty} \n Avg Order Filled Price: {self.avg_p} \n P&L {self.rpal}')
-            
-            time.sleep(1)
-            continue
+                print(f'{self.Symbl} - {self.decision_map} - {self.trend_a} \n')
 
             if self.trend_a == 'BULL' and self.action != 'buy':
                 self.action = 'buy'
                 self.place_trade_order(1,self.action)
+                print(f'Symbl: {self.Symbl} \n Qty: {self.qty} \n Avg Order Filled Price: {self.avg_p} \n P&L {self.rpal}\n')
 
             elif self.trend_a == 'BEAR' and self.action != 'sell':
                 self.action = 'sell'
                 self.place_trade_order(1,self.action)
+                print(f'Symbl: {self.Symbl} \n Qty: {self.qty} \n Avg Order Filled Price: {self.avg_p} \n P&L {self.rpal}\n')
 
 
             self.running_profit()
                 
-            time.sleep(1)
+            time.sleep(2)
              
     def running_profit(self):
         act = ''
@@ -275,11 +254,12 @@ class trading_meths(multiprocessing.Process):
 
         self.trend = self.temp_df['Trend'].values[-(bars+1):-1]
 
-        #print(self.temp_df['Trend'].values[-(bars+1):-1])
-        
-        if np.sum(self.trend) > 4:
+
+        print(f'{self.Symbl} - Time - {time_interval} - Trend - {np.sum(self.trend)}')
+
+        if np.sum(self.trend) > 2:
             return 'BULL'
-        elif np.sum(self.trend) < -4:
+        elif np.sum(self.trend) < -2:
             return 'BEAR'
         else:
             return 'SIDE'
@@ -325,8 +305,6 @@ class trading_meths(multiprocessing.Process):
         self.headers = {'Content-type': 'application/json'}
 
         self.data = {"text":msg}
-        #print(msg)
-
         self.response = requests.post(self.url, headers=self.headers, data=json.dumps(self.data))
 
         #print(self.response.status_code)
@@ -360,6 +338,7 @@ class trading_meths(multiprocessing.Process):
                 self.buy_call()
             else:
                 self.sell_call()
+        
 
     def end_of_trade_acts(self):
         for i in self.SOA:
@@ -388,6 +367,7 @@ class trading_meths(multiprocessing.Process):
                 self.SOA.append(obj)
 
         print(f'{self.Symbl} - Buy = {len(self.BOA)} - Sell = {len(self.SOA)}')
+        
         pd.DataFrame(columns = ['Symbl','Act','Qty','IP','CP','TP','P&L','Datetime']).to_csv('open_positions_legisure.csv',sep=',',header=True,index=False)
         
 
@@ -407,9 +387,3 @@ if __name__ == '__main__':
     curr = curr.strftime('%Y-%m-%d')
     p1 = trading_meths(3,curr,'TREND',1553.40,1523.40,1533.15,'SELL','AAPL',100000)
     p1.start()
-    p2 = trading_meths(3,curr,'TREND',1553.40,1523.40,1533.15,'SELL','^NSEI',100000)
-    p2.start()
-    
-    
-# 19675 Nifty short
-#  Nifty Buy

@@ -10,7 +10,7 @@ import pandas as pd
 def one_m_hist_load(symbol):
     start_date = datetime.now() - timedelta(days=29)
     end_date = start_date + timedelta(days=7)
-    c = 1
+    c = 0
     while end_date <= datetime.now() + timedelta(days=10):
         c+=1
         print(f'Fetching Data from {start_date} - {end_date}')
@@ -40,7 +40,7 @@ def historical_data(start_date,end_date,symbol,c):
     
 
 def inc_load(symbl):
-    c = 1
+    c = 0
     while True:
         
         try:
@@ -67,9 +67,9 @@ def inc_load(symbl):
 
 
 def main():
-    symbol = 'AAPL'
-    #one_m_hist_load(symbol)
-    inc_load(symbol)
+    symbol = 'TCS.NS'
+    one_m_hist_load(symbol)
+    #inc_load(symbol)
 
 if __name__ == '__main__':
     main()
