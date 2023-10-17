@@ -68,8 +68,8 @@ def inc_load(symbl):
 
 def main():
     symbol = 'TCS.NS'
-    one_m_hist_load(symbol)
-    #inc_load(symbol)
+    #one_m_hist_load(symbol)
+    inc_load(symbol)
 
 if __name__ == '__main__':
     main()
